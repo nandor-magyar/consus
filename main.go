@@ -32,9 +32,11 @@ func listHandler(tmpl *template.Template, path string) func(http.ResponseWriter,
 		path := filepath.Join(path, r.URL.Path)
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
+			log.Printf("%s", err.Error())
 			http.NotFound(w, r)
 			return
 		} else if err != nil {
+			log.Printf("%s", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -42,6 +44,7 @@ func listHandler(tmpl *template.Template, path string) func(http.ResponseWriter,
 		if info.IsDir() {
 			files, err := os.ReadDir(path)
 			if err != nil {
+				log.Printf("%s", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -59,6 +62,7 @@ func listHandler(tmpl *template.Template, path string) func(http.ResponseWriter,
 			}
 
 			if err := tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
+				log.Printf("%s", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		} else {
