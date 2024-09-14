@@ -23,6 +23,8 @@ var staticDir embed.FS
 //go:embed version.txt
 var version string
 
+var mediaExtensions = []string{".mp4", ".mp3", ".ogg", ".webm", ".m4a"}
+
 func GetVersion() string {
 	return version
 }
@@ -102,21 +104,16 @@ func GenerateBreadcrumbs(path string) []Breadcrumb {
 	return breadcrumbs
 }
 
-func playerHandler(tmpl *template.Template, dir string) func(http.ResponseWriter, *http.Request) {
+func playerHandler(tmpl *template.Template) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filePath := strings.TrimPrefix(r.URL.Path, "/player/")
-		filebytes, err := os.ReadFile(filepath.Join(dir, filePath))
-		if err != nil {
-			log.Println(err)
-			http.Error(w, "", http.StatusBadRequest)
-		}
 		data := struct {
 			Path     string
 			MimeType string
 			Version  string
 		}{
 			Path:     filePath,
-			MimeType: http.DetectContentType(filebytes),
+			MimeType: GetMimeTypeFromFilename(filePath),
 			Version:  GetVersion(),
 		}
 
@@ -139,15 +136,26 @@ func main() {
 
 	http.Handle("/static/", http.FileServer(http.FS(staticDir)))
 	http.HandleFunc("/", listHandler(templates, *directory))
-	http.HandleFunc("/player/", playerHandler(templates, *directory))
+	http.HandleFunc("/player/", playerHandler(templates))
 	log.Printf("Starting Consus media/file server  %s on port %d...", *directory, *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
+func GetMimeTypeFromFilename(name string) string {
+	for _, ext := range mediaExtensions {
+		if strings.HasSuffix(name, ext) {
+			if ext == ".m4a" {
+				return "audio/aac"
+			}
+			return fmt.Sprintf("audio/%s", strings.TrimPrefix(ext, "."))
+		}
+	}
+	return "application/octet-stream"
+}
+
 func isMediaFile(name string) bool {
-	mediaExtensions := []string{".mp4", ".mp3", ".ogg", ".webm", ".m4a"}
 	for _, ext := range mediaExtensions {
 		if strings.HasSuffix(name, ext) {
 			return true
