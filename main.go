@@ -123,6 +123,8 @@ func playerHandler(tmpl *template.Template) func(http.ResponseWriter, *http.Requ
 	}
 }
 
+func adminHandler()
+
 func main() {
 	port := flag.Int("port", 7001, "Port to serve on")
 	directory := flag.String("directory", ".", "Directory to serve files from")
@@ -137,6 +139,7 @@ func main() {
 	http.Handle("/static/", http.FileServer(http.FS(staticDir)))
 	http.HandleFunc("/", listHandler(templates, *directory))
 	http.HandleFunc("/player/", playerHandler(templates))
+	http.HandleFunc("/admin/", adminHandler(db))
 	log.Printf("Starting Consus media/file server  %s on port %d...", *directory, *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
