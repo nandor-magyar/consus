@@ -13,9 +13,8 @@
         {{- range .Breadcrumbs }} {{- if .IsLast }}
         <li class="pure-menu-item pure-menu-selected">{{ .Name }}</li>
         {{- else }}
-        <li class="pure-menu-item">/</li>
         <li class="pure-menu-item">
-          <a class="pure-menu-link" href="{{ .URL }}"> {{ .Name }}</a>
+          <a class="pure-menu-link" href="{{ .URL }}"> {{ .Name }} /</a>
         </li>
         {{- end }} {{- end }}
       </ul>
@@ -26,7 +25,7 @@
       <li>
         {{if .IsDir}} 🗀 <a href="{{$.Path}}{{.Name}}/">{{.Name}}</a> {{else}}
         {{if isMediaFile .Name}} 🎜 <a href="{{$.Path}}{{.Name}}">{{.Name}}</a>
-        <a href="/player/{{$.Path}}{{.Name}}">[Play]</a>
+        <a href="/view/{{$.Path}}{{.Name}}">[Play]</a>
         {{else}} 🗎 <a href="{{$.Path}}{{.Name}}">{{.Name}}</a>
         {{end}} {{end}}
       </li>

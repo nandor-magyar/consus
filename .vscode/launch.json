@@ -9,8 +9,8 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${fileDirname}",
-      "args": ["-directory", "testdir"]
+      "program": "${workspaceFolder}/main.go",
+      "args": ["-directory", "testdir", "-comments", ".comments"]
     }
   ]
 }
