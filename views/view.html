@@ -1,56 +1,27 @@
+{{ $g := . }}
 <!DOCTYPE html>
 <html>
-  <head>
-    {{template "header" .}}
-  </head>
 
-  <body>
-    <div>
-      <h1>Audio Preview</h1>
-      <h2>{{.Path}}</h2>
+<head>
+  {{template "header" .}}
+</head>
 
-      <audio controls>
-        <source src="/{{.Path}}" type="{{.MimeType}}" />
-        Your browser does not support the audio element.
-      </audio>
+<body>
+  <div>
+    <h1>Audio Preview</h1>
+    <h2>{{.Path}}</h2>
 
-      <h2>Comments</h2>
+    <audio controls>
+      <source src="/{{.Path}}" type="{{.MimeType}}" />
+      Your browser does not support the audio element.
+    </audio>
 
-      <form
-        class="pure-form pure-form-aligned"
-        action="/view/{{.Path}}/comment"
-        method="POST"
-      >
-        <fieldset>
-          <legend>Comment</legend>
-          <label for="user">User</label>
-          <input type="user" id="user" placeholder="user" required />
-          <label for="content">Comment</label>
-          <textarea
-            class="pure-input-1-2"
-            id="content"
-            name="content"
-            rows="3"
-            cols="50"
-            required
-          ></textarea>
+    {{ if .CommentsEnabled }}
+    {{ template "comments" $g }}
+    {{ end }}
 
-          <button type="submit" class="pure-button pure-button-primary">
-            Send
-          </button>
-        </fieldset>
-      </form>
+    {{template "footer" .}}
+  </div>
+</body>
 
-      {{range .Comments}}
-      <div class="comment-box">
-        <div class="comment-user">{{.User}}</div>
-        <div class="comment-content">{{.Content}}</div>
-        <div class="comment-when">{{.When}}</div>
-      </div>
-      {{else}}
-      <div>No comments found.</div>
-
-      {{end}} {{template "footer" .}}
-    </div>
-  </body>
 </html>

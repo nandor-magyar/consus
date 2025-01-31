@@ -1,0 +1,30 @@
+{{ define "comments" }}
+<div>
+    <h2>Comments</h2>
+
+    <form class="pure-form pure-form-aligned" action="/comment/{{.Path}}" method="POST">
+        <fieldset>
+            <legend>Comment</legend>
+            <label for="user">User</label>
+            <input type="user" id="user" placeholder="user" required />
+            <label for="content">Comment</label>
+            <textarea class="pure-input-1-2" id="content" name="content" rows="3" cols="50" required></textarea>
+
+            <button type="submit" class="pure-button pure-button-primary">
+                Send
+            </button>
+        </fieldset>
+    </form>
+
+    {{range .Comments}}
+    <div class="comment-box">
+        <div class="comment-user">{{.User}}</div>
+        <div class="comment-content">{{.Content}}</div>
+        <div class="comment-when">{{.When}}</div>
+    </div>
+    {{else}}
+    <div>No comments found.</div>
+
+    {{end}}
+</div>
+{{ end }}

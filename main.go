@@ -96,13 +96,13 @@ func renderList(tmpl *template.Template, contentPath, commentPath string) func(h
 
 			data := ListView{
 				Breadcrumbs:  GenerateBreadcrumbs(r.URL.Path),
-				Path:         r.URL.Path,
+				Path:         strings.TrimPrefix("/files/", r.URL.Path),
 				Files:        fileInfos,
 				Version:      GetVersion(),
 				CommentCount: commentCount,
 			}
 
-			if err := tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
+			if err := tmpl.ExecuteTemplate(w, "list.html", data); err != nil {
 				log.Printf("%s", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
@@ -154,7 +154,7 @@ func GenerateBreadcrumbs(path string) []Breadcrumb {
 	return breadcrumbs
 }
 
-func renderView(tmpl *template.Template, commentPath string) func(http.ResponseWriter, *http.Request) {
+func renderItem(tmpl *template.Template, commentPath string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filePath := strings.TrimPrefix(r.URL.Path, "/view/")
 		fileCommentPath := filepath.Join(commentPath, filePath)
@@ -177,15 +177,17 @@ func renderView(tmpl *template.Template, commentPath string) func(http.ResponseW
 		}
 
 		data := struct {
-			Path     string
-			MimeType string
-			Version  string
-			Comments []Commentv1
+			Path            string
+			MimeType        string
+			Version         string
+			CommentsEnabled bool
+			Comments        []Commentv1
 		}{
-			Path:     filePath,
-			MimeType: GetMimeTypeFromFilename(filePath),
-			Version:  GetVersion(),
-			Comments: commentsFile.Comments,
+			Path:            filePath,
+			MimeType:        GetMimeTypeFromFilename(filePath),
+			Version:         GetVersion(),
+			CommentsEnabled: commentPath != "",
+			Comments:        commentsFile.Comments,
 		}
 
 		if err := tmpl.ExecuteTemplate(w, "view.html", data); err != nil {
@@ -196,56 +198,92 @@ func renderView(tmpl *template.Template, commentPath string) func(http.ResponseW
 
 func commentSubmit(tmpl *template.Template, commentPath string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/comment") {
-			http.Error(w, "", http.StatusMethodNotAllowed)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, fmt.Errorf("could not parse form: %w", err).Error(), http.StatusBadRequest)
 			return
+		}
+
+		comment := Commentv1{
+			User:    r.FormValue("user"),
+			Content: r.FormValue("content"),
+			When:    time.Now(),
+		}
+
+		fileCommentPath := filepath.Join(commentPath, strings.TrimPrefix(r.URL.Path, "/comment/"))
+		commentBytes, err := os.ReadFile(fileCommentPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
+			} else {
+				http.Error(w, fmt.Errorf("unexpected file error: %w", err).Error(), http.StatusInternalServerError)
+				return
+			}
 		} else {
-			if err := r.ParseForm(); err != nil {
-				http.Error(w, fmt.Errorf("could not parse form: %w", err).Error(), http.StatusBadRequest)
+			commentsFile := CommentFilev1{}
+			if len(commentBytes) > 0 {
+				err := json.Unmarshal(commentBytes, &commentsFile)
+				if err != nil {
+					http.Error(w, fmt.Errorf("could not load comment data: %w", err).Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			commentsFile.Comments = append([]Commentv1{comment}, commentsFile.Comments...)
+			commentBytes, err = json.Marshal(commentsFile)
+			if err != nil {
+				http.Error(w, fmt.Errorf("could not persist comment data: %w", err).Error(), http.StatusInternalServerError)
 				return
 			}
 
-			comment := Commentv1{
-				User:    r.FormValue("user"),
-				Content: r.FormValue("content"),
-				When:    time.Now(),
-			}
-
-			fileCommentPath := filepath.Join(commentPath, strings.TrimPrefix(strings.TrimSuffix(r.URL.Path, "/comment"), "/view/"))
-			commentBytes, err := os.ReadFile(fileCommentPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
-				} else {
-					http.Error(w, fmt.Errorf("unexpected file error: %w", err).Error(), http.StatusInternalServerError)
-					return
-				}
-			} else {
-				commentsFile := CommentFilev1{}
-				if len(commentBytes) > 0 {
-					err := json.Unmarshal(commentBytes, &commentsFile)
-					if err != nil {
-						http.Error(w, fmt.Errorf("could not load comment data: %w", err).Error(), http.StatusInternalServerError)
-						return
-					}
-				}
-				commentsFile.Comments = append([]Commentv1{comment}, commentsFile.Comments...)
-				commentBytes, err = json.Marshal(commentsFile)
-				if err != nil {
-					http.Error(w, fmt.Errorf("could not persist comment data: %w", err).Error(), http.StatusInternalServerError)
-					return
-				}
-
-				os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
-				r.URL.Path = strings.TrimSuffix(r.URL.Path, "/comment")
-				renderView(tmpl, commentPath)(w, r)
-			}
+			os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
+			r.URL.Path = fmt.Sprintf("/view/%s", fileCommentPath)
+			renderItem(tmpl, commentPath)(w, r)
 		}
 	}
 }
 
-// we need more TYPES and comments as feature
-// server
+type ServerConfig struct {
+	Port      int
+	Directory string
+	Comments  string
+}
+
+func NewMainServer(ctx context.Context, config ServerConfig) error {
+	templates := template.Must(template.New("").Funcs(template.FuncMap{
+		"isMediaFile": isMediaFile,
+		"isLast":      func(i, size int) bool { return i == size-1 },
+		"split":       strings.Split,
+	}).ParseFS(viewDir, "views/*.html", "views/partials/*"))
+
+	mux := http.NewServeMux()
+
+	mux.Handle("/", http.RedirectHandler("/files/", http.StatusTemporaryRedirect))
+	mux.Handle("/static/", http.FileServer(http.FS(staticDir)))
+
+	// would be nice to separate file and rendering this early
+	mux.HandleFunc("/files/", renderList(templates, config.Directory, config.Comments))
+
+	mux.HandleFunc("GET /view/", renderItem(templates, config.Comments))
+
+	// doubt: maybe having it on a different route has no benefits now
+	mux.HandleFunc("POST /comment/", commentSubmit(templates, config.Comments))
+	log.Printf("Starting Consus media/file server  %s on port %d...", config.Comments, config.Port)
+
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", config.Port))
+	if err != nil {
+		log.Fatal("could not start listening: ", err)
+	}
+
+	svr := http.Server{
+		Handler: mux,
+	}
+
+	defer svr.Shutdown(ctx)
+
+	return svr.Serve(listener)
+}
+
+type mainServer struct {
+}
 
 // comments
 
@@ -260,33 +298,11 @@ func main() {
 	comments := flag.String("comments", ".comments", "A shadow directory to store comments of files")
 	flag.Parse()
 
-	templates := template.Must(template.New("").Funcs(template.FuncMap{
-		"isMediaFile": isMediaFile,
-		"isLast":      func(i, size int) bool { return i == size-1 },
-		"split":       strings.Split,
-	}).ParseFS(viewDir, "views/*.html", "views/partials/*"))
-
-	mux := http.NewServeMux()
-
-	mux.Handle("/", http.RedirectHandler("/files/", http.StatusTemporaryRedirect))
-	mux.Handle("/static/", http.FileServer(http.FS(staticDir)))
-	mux.HandleFunc("/files/", renderList(templates, *directory, *comments))
-	mux.HandleFunc("GET /view/", renderView(templates, *comments))
-	mux.HandleFunc("POST /view/", commentSubmit(templates, *comments))
-	log.Printf("Starting Consus media/file server  %s on port %d...", *directory, *port)
-
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
-	if err != nil {
-		log.Fatal("could not start listening: ", err)
-	}
-
-	svr := http.Server{
-		Handler: mux,
-	}
-
-	defer svr.Shutdown(ctx)
-
-	err = svr.Serve(listener)
+	err := NewMainServer(ctx, ServerConfig{
+		Port:      *port,
+		Directory: *directory,
+		Comments:  *comments,
+	})
 	if err != nil {
 		log.Fatal("serve error ", err)
 	}
