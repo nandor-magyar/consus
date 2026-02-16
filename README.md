@@ -37,6 +37,11 @@ No OAuth env vars? The login link still shows up but goes nowhere. Only emails i
 
 ## TODO
 
-- Refactor (htmx, cleaner split between backend and UI)
-- Tests (someday)
+- cleaner UI, a bit more compact and space efficient.
+- markdown/wyswyg editor for comments
+- share-tokens and then
+- login only with whitelisted emails
+- upload
+- refactor the whole thing to htmx and split it into proper files structs and whatever
+- tests
 

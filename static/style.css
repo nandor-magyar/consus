@@ -163,10 +163,29 @@ body {
   margin-bottom: 0.8em;
 }
 
+.comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .comment-user {
   font-weight: 700;
   font-size: 0.95em;
   color: #2c3e50;
+}
+
+.comment-delete {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  font-size: 0.8em;
+  cursor: pointer;
+  padding: 0.2em 0.5em;
+}
+
+.comment-delete:hover {
+  color: #e74c3c;
 }
 
 .comment-content {

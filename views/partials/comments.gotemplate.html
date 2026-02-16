@@ -22,12 +22,34 @@
 </div>
 
 {{range .Comments}}
-<div class="comment-item">
-    <div class="comment-user">{{.User}}</div>
+<div class="comment-item" data-comment-id="{{.ID}}">
+    <div class="comment-header">
+        <span class="comment-user">{{.User}}</span>
+        {{ if eq $.UserEmail .User }}
+        <button class="comment-delete" onclick="deleteComment(this, '{{$.Path}}', '{{.ID}}')" type="button">Delete</button>
+        {{ end }}
+    </div>
     <div class="comment-content">{{.Content}}</div>
     <div class="comment-when">{{.When}}</div>
 </div>
 {{else}}
 <p class="no-comments">No comments yet.</p>
 {{end}}
+
+<script>
+function deleteComment(btn, path, id) {
+    var item = btn.closest('.comment-item');
+    item.remove();
+    fetch('/comment/' + path + '?id=' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(function(res) {
+            if (!res.ok) {
+                document.querySelector('.no-comments')?.remove();
+                var err = document.createElement('p');
+                err.textContent = 'Failed to delete comment. Please reload the page.';
+                err.style.color = '#e74c3c';
+                document.querySelector('.card-body').appendChild(err);
+            }
+        });
+}
+</script>
 {{ end }}
