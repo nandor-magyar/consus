@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +19,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // Embed files/directories
@@ -31,6 +37,131 @@ var version string
 
 var mediaExtensions = []string{".mp4", ".mp3", ".ogg", ".webm", ".m4a"}
 
+// sessions stores active session tokens mapped to user emails.
+var sessions = struct {
+	mu sync.Mutex
+	m  map[string]string
+}{m: make(map[string]string)}
+
+func newSessionToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+func emailFromRequest(r *http.Request) string {
+	c, err := r.Cookie("session")
+	if err != nil {
+		return ""
+	}
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	return sessions.m[c.Value]
+}
+
+func isAllowedEmail(email string) bool {
+	allowed := os.Getenv("ALLOWED_EMAILS")
+	if allowed == "" {
+		return false
+	}
+	for e := range strings.SplitSeq(allowed, ",") {
+		if strings.TrimSpace(e) == email {
+			return true
+		}
+	}
+	return false
+}
+
+func newOAuthConfig() *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
+		Endpoint:     google.Endpoint,
+	}
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	state := newSessionToken()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   300,
+	})
+	http.Redirect(w, r, newOAuthConfig().AuthCodeURL(state), http.StatusTemporaryRedirect)
+}
+
+func handleCallback(w http.ResponseWriter, r *http.Request) {
+	stateCookie, err := r.Cookie("oauth_state")
+	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", Path: "/", MaxAge: -1})
+
+	token, err := newOAuthConfig().Exchange(r.Context(), r.URL.Query().Get("code"))
+	if err != nil {
+		log.Printf("oauth exchange error: %v", err)
+		http.Error(w, "oauth exchange failed", http.StatusInternalServerError)
+		return
+	}
+
+	client := newOAuthConfig().Client(r.Context(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		log.Printf("userinfo fetch error: %v", err)
+		http.Error(w, "could not fetch user info", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var userInfo struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &userInfo); err != nil {
+		http.Error(w, "could not parse user info", http.StatusInternalServerError)
+		return
+	}
+
+	if !isAllowedEmail(userInfo.Email) {
+		http.Error(w, "access denied: email not in allowlist", http.StatusForbidden)
+		return
+	}
+
+	sessionToken := newSessionToken()
+	sessions.mu.Lock()
+	sessions.m[sessionToken] = userInfo.Email
+	sessions.mu.Unlock()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    sessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400, // 24 hours
+	})
+	http.Redirect(w, r, "/files/", http.StatusTemporaryRedirect)
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie("session"); err == nil {
+		sessions.mu.Lock()
+		delete(sessions.m, c.Value)
+		sessions.mu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: "session", Path: "/", MaxAge: -1})
+	http.Redirect(w, r, "/files/", http.StatusTemporaryRedirect)
+}
+
 type BaseView struct {
 	Version     string
 	CurrentYear string
@@ -43,6 +174,7 @@ type ListView struct {
 	Version      string
 	CommentCount map[string]uint16
 	IsMediaFile  func(string) bool
+	UserEmail    string
 }
 
 type Breadcrumb struct {
@@ -124,6 +256,7 @@ func renderList(tmpl *template.Template, contentPath, commentPath string) func(h
 				Files:        fileInfos,
 				Version:      GetVersion(),
 				CommentCount: commentCount,
+				UserEmail:    emailFromRequest(r),
 			}
 
 			if err := tmpl.ExecuteTemplate(w, "list.html", data); err != nil {
@@ -215,12 +348,14 @@ func renderItem(tmpl *template.Template, commentPath string) func(http.ResponseW
 			Version         string
 			CommentsEnabled bool
 			Comments        []Commentv1
+			UserEmail       string
 		}{
 			Path:            filePath,
 			MimeType:        GetMimeTypeFromFilename(filePath),
 			Version:         GetVersion(),
 			CommentsEnabled: commentPath != "",
 			Comments:        commentsFile.Comments,
+			UserEmail:       emailFromRequest(r),
 		}
 
 		if err := tmpl.ExecuteTemplate(w, "view.html", data); err != nil {
@@ -231,13 +366,19 @@ func renderItem(tmpl *template.Template, commentPath string) func(http.ResponseW
 
 func commentSubmit(tmpl *template.Template, commentPath string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		email := emailFromRequest(r)
+		if email == "" {
+			http.Error(w, "login required", http.StatusUnauthorized)
+			return
+		}
+
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, fmt.Errorf("could not parse form: %w", err).Error(), http.StatusBadRequest)
 			return
 		}
 
 		comment := Commentv1{
-			User:    r.FormValue("user"),
+			User:    email,
 			Content: r.FormValue("content"),
 			When:    time.Now(),
 		}
@@ -305,6 +446,10 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 	mux.Handle("/", http.RedirectHandler("/files/", http.StatusTemporaryRedirect))
 	mux.Handle("/static/", http.FileServer(http.FS(staticDir)))
 
+	mux.HandleFunc("GET /login", handleLogin)
+	mux.HandleFunc("GET /callback", handleCallback)
+	mux.HandleFunc("GET /logout", handleLogout)
+
 	// would be nice to separate file and rendering this early
 	mux.HandleFunc("/files/", renderList(templates, config.data, config.Comments))
 
@@ -315,6 +460,11 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 	log.Printf("Starting Consus media/file server on port %d...", config.Port)
 	log.Printf("DataPath: %s", config.data)
 	log.Printf("CommentsPath: %s", config.Comments)
+	log.Printf("OAuth: ClientID=%s RedirectURL=%s AllowedEmails=%s",
+		redact(os.Getenv("GOOGLE_CLIENT_ID")),
+		os.Getenv("GOOGLE_REDIRECT_URL"),
+		os.Getenv("ALLOWED_EMAILS"),
+	)
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", config.Port))
 	if err != nil {
@@ -341,10 +491,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	port := flag.Int("port", 7001, "Port to serve on")
+	port := flag.Int("port", 7001, "Port to serve on (overridden by PORT env var)")
 	data := flag.String("data", ".", "Directory to serve files from")
 	comments := flag.String("comments", ".comments", "A shadow directory to store comments of files")
 	flag.Parse()
+
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		if p, err := fmt.Sscanf(envPort, "%d", port); p != 1 || err != nil {
+			log.Fatalf("invalid PORT env var: %q", envPort)
+		}
+	}
 
 	err := NewMainServer(ctx, ServerConfig{
 		Port:     *port,
@@ -366,6 +522,13 @@ func GetMimeTypeFromFilename(name string) string {
 		}
 	}
 	return "application/octet-stream"
+}
+
+func redact(s string) string {
+	if len(s) <= 8 {
+		return "***"
+	}
+	return s[:4] + "***" + s[len(s)-4:]
 }
 
 func isMediaFile(name string) bool {

@@ -12,6 +12,11 @@
     <ul class="pure-menu-list">
       <li class="pure-menu-item"><a class="pure-menu-link" href="/files/">/</a></li>
     </ul>
+    {{ if .UserEmail }}
+    <span class="nav-user">{{ .UserEmail }} &middot; <a href="/logout">Logout</a></span>
+    {{ else }}
+    <span class="nav-user"><a href="/login">Login</a></span>
+    {{ end }}
   </div>
 
   <div class="container">

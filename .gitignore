@@ -4,3 +4,4 @@ testdir
 .meta
 *_bin*
 consus
+.env

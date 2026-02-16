@@ -2,10 +2,10 @@
 <div class="card">
     <div class="card-header">Comments</div>
     <div class="card-body">
+        {{ if .UserEmail }}
         <form class="pure-form pure-form-stacked" action="/comment/{{.Path}}" method="POST">
             <fieldset>
-                <label for="user">Name</label>
-                <input type="text" id="user" name="user" class="pure-input-1" placeholder="Your name" required />
+                <p>Commenting as <strong>{{ .UserEmail }}</strong></p>
 
                 <label for="content">Comment</label>
                 <textarea id="content" name="content" class="pure-input-1" rows="3" placeholder="Write a comment..." required></textarea>
@@ -15,6 +15,9 @@
                 </button>
             </fieldset>
         </form>
+        {{ else }}
+        <p><a href="/login">Log in with Google</a> to leave a comment.</p>
+        {{ end }}
     </div>
 </div>
 

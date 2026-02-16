@@ -29,10 +29,13 @@ body {
 
 /* ===== NAVBAR ===== */
 .pure-menu.navbar {
+  display: flex;
+  align-items: center;
   background: #fff;
   border-bottom: 1px solid #e8e8e8;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   padding: 0 1.5em;
+  margin-bottom: 1.5em;
 }
 
 .pure-menu.navbar .pure-menu-heading {
@@ -57,6 +60,17 @@ body {
 .pure-menu.navbar .pure-menu-separator {
   color: #bdc3c7;
   padding: 0 0.2em;
+}
+
+.nav-user {
+  margin-left: auto;
+  padding: 0.5em 0;
+  font-size: 0.85em;
+  color: #7f8c8d;
+}
+
+.nav-user a {
+  color: #0078e7;
 }
 
 /* ===== CARDS ===== */
@@ -182,6 +196,15 @@ body {
   border-top: 1px solid #e8e8e8;
   margin-top: 2em;
   flex-shrink: 0;
+}
+
+.footer-github {
+  color: #95a5a6;
+  vertical-align: middle;
+}
+
+.footer-github:hover {
+  color: #2c3e50;
 }
 
 /* ===== PAGE HEADING ===== */
