@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,11 @@ var staticDir embed.FS
 var version string
 
 var mediaExtensions = []string{".mp4", ".mp3", ".ogg", ".webm", ".m4a"}
+
+type BaseView struct {
+	Version     string
+	CurrentYear string
+}
 
 type ListView struct {
 	Breadcrumbs  []Breadcrumb
@@ -53,6 +59,24 @@ type Commentv1 struct {
 	User    string
 	Content string
 	When    time.Time
+}
+
+// commentLocks provides per-file mutual exclusion for comment read-modify-write.
+var commentLocks = struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}{locks: make(map[string]*sync.Mutex)}
+
+func lockCommentFile(path string) func() {
+	commentLocks.mu.Lock()
+	m, ok := commentLocks.locks[path]
+	if !ok {
+		m = &sync.Mutex{}
+		commentLocks.locks[path] = m
+	}
+	commentLocks.mu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 func GetVersion() string {
@@ -132,6 +156,15 @@ func getCommentCountPerItem(commentsLocation string) (map[string]uint16, error) 
 		if f.IsDir() {
 			continue
 		}
+		data, err := os.ReadFile(filepath.Join(commentsLocation, f.Name()))
+		if err != nil {
+			continue
+		}
+		var cf CommentFilev1
+		if err := json.Unmarshal(data, &cf); err != nil {
+			continue
+		}
+		counts[f.Name()] = uint16(len(cf.Comments))
 	}
 
 	return counts, nil
@@ -209,42 +242,54 @@ func commentSubmit(tmpl *template.Template, commentPath string) func(http.Respon
 			When:    time.Now(),
 		}
 
-		fileCommentPath := filepath.Join(commentPath, strings.TrimPrefix(r.URL.Path, "/comment/"))
-		commentBytes, err := os.ReadFile(fileCommentPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
-			} else {
-				http.Error(w, fmt.Errorf("unexpected file error: %w", err).Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			commentsFile := CommentFilev1{}
-			if len(commentBytes) > 0 {
-				err := json.Unmarshal(commentBytes, &commentsFile)
-				if err != nil {
-					http.Error(w, fmt.Errorf("could not load comment data: %w", err).Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-			commentsFile.Comments = append([]Commentv1{comment}, commentsFile.Comments...)
-			commentBytes, err = json.Marshal(commentsFile)
-			if err != nil {
-				http.Error(w, fmt.Errorf("could not persist comment data: %w", err).Error(), http.StatusInternalServerError)
-				return
-			}
+		filePath := strings.TrimPrefix(r.URL.Path, "/comment/")
+		fileCommentPath := filepath.Join(commentPath, filePath)
 
-			os.WriteFile(fileCommentPath, commentBytes, os.ModePerm)
-			r.URL.Path = fmt.Sprintf("/view/%s", fileCommentPath)
-			renderItem(tmpl, commentPath)(w, r)
+		// Ensure parent directory exists
+		if err := os.MkdirAll(filepath.Dir(fileCommentPath), 0o755); err != nil {
+			http.Error(w, fmt.Errorf("could not create comment directory: %w", err).Error(), http.StatusInternalServerError)
+			return
 		}
+
+		unlock := lockCommentFile(fileCommentPath)
+		defer unlock()
+
+		// Load existing comments (if any)
+		commentsFile := CommentFilev1{}
+		commentBytes, err := os.ReadFile(fileCommentPath)
+		if err != nil && !os.IsNotExist(err) {
+			http.Error(w, fmt.Errorf("unexpected file error: %w", err).Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(commentBytes) > 0 {
+			if err := json.Unmarshal(commentBytes, &commentsFile); err != nil {
+				http.Error(w, fmt.Errorf("could not load comment data: %w", err).Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Prepend new comment and persist
+		commentsFile.Comments = append([]Commentv1{comment}, commentsFile.Comments...)
+		commentBytes, err = json.Marshal(commentsFile)
+		if err != nil {
+			http.Error(w, fmt.Errorf("could not persist comment data: %w", err).Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(fileCommentPath, commentBytes, 0o644); err != nil {
+			http.Error(w, fmt.Errorf("could not write comment file: %w", err).Error(), http.StatusInternalServerError)
+			return
+		}
+
+		r.URL.Path = fmt.Sprintf("/view/%s", filePath)
+		renderItem(tmpl, commentPath)(w, r)
 	}
 }
 
 type ServerConfig struct {
-	Port      int
-	Directory string
-	Comments  string
+	Port     int
+	data     string
+	Comments string
 }
 
 func NewMainServer(ctx context.Context, config ServerConfig) error {
@@ -252,6 +297,7 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 		"isMediaFile": isMediaFile,
 		"isLast":      func(i, size int) bool { return i == size-1 },
 		"split":       strings.Split,
+		"year":        time.Now().Year,
 	}).ParseFS(viewDir, "views/*.html", "views/partials/*"))
 
 	mux := http.NewServeMux()
@@ -260,13 +306,15 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 	mux.Handle("/static/", http.FileServer(http.FS(staticDir)))
 
 	// would be nice to separate file and rendering this early
-	mux.HandleFunc("/files/", renderList(templates, config.Directory, config.Comments))
+	mux.HandleFunc("/files/", renderList(templates, config.data, config.Comments))
 
 	mux.HandleFunc("GET /view/", renderItem(templates, config.Comments))
 
 	// doubt: maybe having it on a different route has no benefits now
 	mux.HandleFunc("POST /comment/", commentSubmit(templates, config.Comments))
-	log.Printf("Starting Consus media/file server  %s on port %d...", config.Comments, config.Port)
+	log.Printf("Starting Consus media/file server on port %d...", config.Port)
+	log.Printf("DataPath: %s", config.data)
+	log.Printf("CommentsPath: %s", config.Comments)
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", config.Port))
 	if err != nil {
@@ -294,14 +342,14 @@ func main() {
 	defer cancel()
 
 	port := flag.Int("port", 7001, "Port to serve on")
-	directory := flag.String("directory", ".", "Directory to serve files from")
+	data := flag.String("data", ".", "Directory to serve files from")
 	comments := flag.String("comments", ".comments", "A shadow directory to store comments of files")
 	flag.Parse()
 
 	err := NewMainServer(ctx, ServerConfig{
-		Port:      *port,
-		Directory: *directory,
-		Comments:  *comments,
+		Port:     *port,
+		data:     *data,
+		Comments: *comments,
 	})
 	if err != nil {
 		log.Fatal("serve error ", err)

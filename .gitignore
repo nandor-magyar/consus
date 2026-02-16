@@ -1,4 +1,6 @@
 testdir
 .comments
+.data
 .meta
 *_bin*
+consus

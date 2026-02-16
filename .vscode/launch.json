@@ -10,7 +10,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}/main.go",
-      "args": ["-directory", "testdir", "-comments", ".comments"]
+      "args": ["-directory", "data", "-comments", ".comments"]
     }
   ]
 }
