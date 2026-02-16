@@ -94,6 +94,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   300,
 	})
+	if redirect := r.URL.Query().Get("redirect"); redirect != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oauth_redirect",
+			Value:    redirect,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   300,
+		})
+	}
 	http.Redirect(w, r, newOAuthConfig().AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
@@ -149,7 +159,16 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400, // 24 hours
 	})
-	http.Redirect(w, r, "/files/", http.StatusTemporaryRedirect)
+
+	redirectTo := "/files/"
+	if c, err := r.Cookie("oauth_redirect"); err == nil && c.Value != "" {
+		// Only allow relative paths to prevent open redirect
+		if strings.HasPrefix(c.Value, "/") {
+			redirectTo = c.Value
+		}
+		http.SetCookie(w, &http.Cookie{Name: "oauth_redirect", Path: "/", MaxAge: -1})
+	}
+	http.Redirect(w, r, redirectTo, http.StatusTemporaryRedirect)
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +207,7 @@ type CommentFilev1 struct {
 }
 
 type Commentv1 struct {
-	ID      string    `json:"ID,omitempty"`
+	ID      string `json:"ID,omitempty"`
 	User    string
 	Content string
 	When    time.Time
@@ -599,8 +618,8 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 	log.Printf("Starting Consus media/file server on port %d...", config.Port)
 	log.Printf("DataPath: %s", config.data)
 	log.Printf("CommentsPath: %s", config.Comments)
-	log.Printf("OAuth: ClientID=%s RedirectURL=%s AllowedEmails=%s",
-		redact(os.Getenv("GOOGLE_CLIENT_ID")),
+	log.Printf("OAuth: ClientID=%s ClientSecret=%s RedirectURL=%s AllowedEmails=%s",
+		redact(os.Getenv("GOOGLE_CLIENT_ID")), redact(os.Getenv("GOOGLE_CLIENT_SECRET")),
 		os.Getenv("GOOGLE_REDIRECT_URL"),
 		os.Getenv("ALLOWED_EMAILS"),
 	)

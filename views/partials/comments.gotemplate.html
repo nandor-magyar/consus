@@ -5,51 +5,55 @@
         {{ if .UserEmail }}
         <form class="pure-form pure-form-stacked" action="/comment/{{.Path}}" method="POST">
             <fieldset>
-                <p>Commenting as <strong>{{ .UserEmail }}</strong></p>
+                <textarea id="content" name="content" class="pure-input-1" rows="3" placeholder="Write a comment..."
+                    required></textarea>
 
-                <label for="content">Comment</label>
-                <textarea id="content" name="content" class="pure-input-1" rows="3" placeholder="Write a comment..." required></textarea>
-
-                <button type="submit" class="pure-button pure-button-primary">
-                    Send
-                </button>
+                <div class="comment-submit-row">
+                    <span>Commenting as <strong>{{ .UserEmail }}</strong></span>
+                    <button type="submit" class="pure-button pure-button-primary" style="margin-left:1em;">Send</button>
+                </div>
             </fieldset>
         </form>
         {{ else }}
-        <p><a href="/login">Log in with Google</a> to leave a comment.</p>
+        <p><a href="/login?redirect=/view/{{.Path}}">Log in with Google</a> to leave a comment.</p>
         {{ end }}
     </div>
+
+    {{range .Comments}}
+    <div class="comment-item" data-comment-id="{{.ID}}">
+        <div class="comment-header">
+            <span class="comment-user">{{.User}}</span>
+            {{ if eq $.UserEmail .User }}
+            <button class="comment-delete" onclick="deleteComment(this, '{{$.Path}}', '{{.ID}}')" type="button">
+                Delete
+            </button>
+            {{ end }}
+        </div>
+        <div class="comment-content">{{.Content}}</div>
+        <div class="comment-when">{{.When}}</div>
+    </div>
+    {{else}}
+    <p class="no-comments">No comments yet.</p>
+    {{end}}
 </div>
 
-{{range .Comments}}
-<div class="comment-item" data-comment-id="{{.ID}}">
-    <div class="comment-header">
-        <span class="comment-user">{{.User}}</span>
-        {{ if eq $.UserEmail .User }}
-        <button class="comment-delete" onclick="deleteComment(this, '{{$.Path}}', '{{.ID}}')" type="button">Delete</button>
-        {{ end }}
-    </div>
-    <div class="comment-content">{{.Content}}</div>
-    <div class="comment-when">{{.When}}</div>
-</div>
-{{else}}
-<p class="no-comments">No comments yet.</p>
-{{end}}
+
 
 <script>
-function deleteComment(btn, path, id) {
-    var item = btn.closest('.comment-item');
-    item.remove();
-    fetch('/comment/' + path + '?id=' + encodeURIComponent(id), { method: 'DELETE' })
-        .then(function(res) {
+    function deleteComment(btn, path, id) {
+        var item = btn.closest(".comment-item");
+        item.remove();
+        fetch("/comment/" + path + "?id=" + encodeURIComponent(id), {
+            method: "DELETE",
+        }).then(function (res) {
             if (!res.ok) {
-                document.querySelector('.no-comments')?.remove();
-                var err = document.createElement('p');
-                err.textContent = 'Failed to delete comment. Please reload the page.';
-                err.style.color = '#e74c3c';
-                document.querySelector('.card-body').appendChild(err);
+                document.querySelector(".no-comments")?.remove();
+                var err = document.createElement("p");
+                err.textContent = "Failed to delete comment. Please reload the page.";
+                err.style.color = "#e74c3c";
+                document.querySelector(".card-body").appendChild(err);
             }
         });
-}
+    }
 </script>
 {{ end }}

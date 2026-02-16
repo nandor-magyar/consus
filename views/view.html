@@ -15,7 +15,7 @@
     {{ if .UserEmail }}
     <span class="nav-user">{{ .UserEmail }} &middot; <a href="/logout">Logout</a></span>
     {{ else }}
-    <span class="nav-user"><a href="/login">Login</a></span>
+    <span class="nav-user"><a href="/login?redirect=/view/{{.Path}}">Login</a></span>
     {{ end }}
   </div>
 
