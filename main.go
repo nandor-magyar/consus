@@ -252,7 +252,7 @@ func renderList(tmpl *template.Template, contentPath, commentPath string) func(h
 
 			data := ListView{
 				Breadcrumbs:  GenerateBreadcrumbs(r.URL.Path),
-				Path:         strings.TrimPrefix("/files/", r.URL.Path),
+				Path:         strings.TrimPrefix(r.URL.Path, "/files/"),
 				Files:        fileInfos,
 				Version:      GetVersion(),
 				CommentCount: commentCount,

@@ -36,12 +36,12 @@
           <tr>
             {{if .IsDir}}
             <td class="file-icon">&#x1F5C0;</td>
-            <td class="file-name"><a href="{{$.Path}}{{.Name}}/">{{.Name}}</a></td>
+            <td class="file-name"><a href="{{.Name}}/">{{.Name}}</a></td>
             <td class="file-actions"></td>
             {{else if isMediaFile .Name}}
             <td class="file-icon">&#x266C;</td>
             <td class="file-name">
-              <a href="{{$.Path}}{{.Name}}">{{.Name}}</a>
+              <a href="{{.Name}}">{{.Name}}</a>
               {{with index $.CommentCount .Name}}
               <span class="badge">{{.}}</span>
               {{end}}
@@ -51,7 +51,7 @@
             </td>
             {{else}}
             <td class="file-icon">&#x1F5CE;</td>
-            <td class="file-name"><a href="/files/{{$.Path}}{{.Name}}">{{.Name}}</a></td>
+            <td class="file-name"><a href="{{.Name}}">{{.Name}}</a></td>
             <td class="file-actions"></td>
             {{end}}
           </tr>
