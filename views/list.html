@@ -6,32 +6,56 @@
 </head>
 
 <body>
-  <div class="pure-menu pure-menu-horizontal">
-    <p class="pure-menu-heading">Consus</p>
+  <div class="pure-menu pure-menu-horizontal navbar">
+    <a class="pure-menu-heading" href="/">Consus</a>
     <ul class="pure-menu-list">
-      <li class="pure-menu-item"><a class="pure-menu-link" href="/">/</a></li>
+      <li class="pure-menu-item"><a class="pure-menu-link" href="/files/">/</a></li>
 
-      {{- range .Breadcrumbs }} {{- if .IsLast }}
+      {{- range .Breadcrumbs }}
+        {{- if .IsLast }}
       <li class="pure-menu-item pure-menu-selected">{{ .Name }}</li>
-      {{- else }}
+        {{- else }}
       <li class="pure-menu-item">
-        <a class="pure-menu-link" href="{{ .URL }}"> {{ .Name }} /</a>
+        <a class="pure-menu-link" href="{{ .URL }}">{{ .Name }}</a>
       </li>
-      {{- end }} {{- end }}
+        {{- end }}
+      {{- end }}
     </ul>
   </div>
 
-  <ul class="file-list-ul">
-    {{range .Files}}
-    <li>
-      {{if .IsDir}} 🗀 <a href="{{$.Path}}{{.Name}}/">{{.Name}}</a> {{else}}
-      {{if isMediaFile .Name}} 🎜 <a href="{{$.Path}}{{.Name}}">{{.Name}}</a>
-      <a href="/view/{{$.Path}}{{.Name}}">[Play]</a>
-      {{else}} 🗎 <a href="/files/{{$.Path}}{{.Name}}">{{.Name}}</a>
-      {{end}} {{end}}
-    </li>
-    {{end}}
-  </ul>
+  <div class="container">
+    <div class="card">
+      <table class="pure-table pure-table-horizontal file-table">
+        <tbody>
+          {{range .Files}}
+          <tr>
+            {{if .IsDir}}
+            <td class="file-icon">&#x1F5C0;</td>
+            <td class="file-name"><a href="{{$.Path}}{{.Name}}/">{{.Name}}</a></td>
+            <td class="file-actions"></td>
+            {{else if isMediaFile .Name}}
+            <td class="file-icon">&#x266C;</td>
+            <td class="file-name">
+              <a href="{{$.Path}}{{.Name}}">{{.Name}}</a>
+              {{with index $.CommentCount .Name}}
+              <span class="badge">{{.}}</span>
+              {{end}}
+            </td>
+            <td class="file-actions">
+              <a class="pure-button pure-button-primary" href="/view/{{$.Path}}{{.Name}}">Play</a>
+            </td>
+            {{else}}
+            <td class="file-icon">&#x1F5CE;</td>
+            <td class="file-name"><a href="/files/{{$.Path}}{{.Name}}">{{.Name}}</a></td>
+            <td class="file-actions"></td>
+            {{end}}
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   {{template "footer" .}}
 </body>
 

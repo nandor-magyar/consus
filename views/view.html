@@ -7,21 +7,31 @@
 </head>
 
 <body>
-  <div>
-    <h1>Audio Preview</h1>
-    <h2>{{.Path}}</h2>
+  <div class="pure-menu pure-menu-horizontal navbar">
+    <a class="pure-menu-heading" href="/">Consus</a>
+    <ul class="pure-menu-list">
+      <li class="pure-menu-item"><a class="pure-menu-link" href="/files/">/</a></li>
+    </ul>
+  </div>
 
-    <audio controls>
-      <source src="/{{.Path}}" type="{{.MimeType}}" />
-      Your browser does not support the audio element.
-    </audio>
+  <div class="container">
+    <div class="card">
+      <div class="card-header">Audio Preview</div>
+      <div class="player-section">
+        <p class="file-path">{{.Path}}</p>
+        <audio controls>
+          <source src="/{{.Path}}" type="{{.MimeType}}" />
+          Your browser does not support the audio element.
+        </audio>
+      </div>
+    </div>
 
     {{ if .CommentsEnabled }}
     {{ template "comments" $g }}
     {{ end }}
-
-    {{template "footer" .}}
   </div>
+
+  {{template "footer" .}}
 </body>
 
 </html>
