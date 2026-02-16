@@ -23,7 +23,7 @@
     <div class="comment-item" data-comment-id="{{.ID}}">
         <div class="comment-header">
             <span class="comment-user">{{.User}}</span>
-            {{ if eq $.UserEmail .User }}
+            {{ if and (eq $.UserEmail .User) (canDelete .When) }}
             <button class="comment-delete" onclick="deleteComment(this, '{{$.Path}}', '{{.ID}}')" type="button">
                 Delete
             </button>

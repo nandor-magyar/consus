@@ -406,7 +406,7 @@ func renderItem(tmpl *template.Template, commentPath string) func(http.ResponseW
 	}
 }
 
-func commentSubmit(tmpl *template.Template, commentPath string) func(http.ResponseWriter, *http.Request) {
+func commentSubmit(commentPath string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		email := emailFromRequest(r)
 		if email == "" {
@@ -465,8 +465,7 @@ func commentSubmit(tmpl *template.Template, commentPath string) func(http.Respon
 			return
 		}
 
-		r.URL.Path = fmt.Sprintf("/view/%s", filePath)
-		renderItem(tmpl, commentPath)(w, r)
+		http.Redirect(w, r, fmt.Sprintf("/view/%s", filePath), http.StatusSeeOther)
 	}
 }
 
@@ -506,6 +505,10 @@ func commentDelete(commentPath string) func(http.ResponseWriter, *http.Request) 
 			if commentsFile.Comments[i].ID == commentID {
 				if commentsFile.Comments[i].User != email {
 					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+				if time.Since(commentsFile.Comments[i].When) >= 5*time.Minute {
+					http.Error(w, "delete window expired", http.StatusForbidden)
 					return
 				}
 				commentsFile.Comments[i].Deleted = true
@@ -596,6 +599,7 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 		"isLast":      func(i, size int) bool { return i == size-1 },
 		"split":       strings.Split,
 		"year":        time.Now().Year,
+		"canDelete":   func(t time.Time) bool { return time.Since(t) < 5*time.Minute },
 	}).ParseFS(viewDir, "views/*.html", "views/partials/*"))
 
 	mux := http.NewServeMux()
@@ -613,7 +617,7 @@ func NewMainServer(ctx context.Context, config ServerConfig) error {
 	mux.HandleFunc("GET /view/", renderItem(templates, config.Comments))
 
 	// doubt: maybe having it on a different route has no benefits now
-	mux.HandleFunc("POST /comment/", commentSubmit(templates, config.Comments))
+	mux.HandleFunc("POST /comment/", commentSubmit(config.Comments))
 	mux.HandleFunc("DELETE /comment/", commentDelete(config.Comments))
 	log.Printf("Starting Consus media/file server on port %d...", config.Port)
 	log.Printf("DataPath: %s", config.data)

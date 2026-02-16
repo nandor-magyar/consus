@@ -23,7 +23,7 @@
     <div class="card">
       <div class="card-header">Audio Preview</div>
       <div class="player-section">
-        <p class="file-path">{{.Path}}</p>
+        <p class="file-path">{{.Path}}   <a class="pure-button pure-button-primary" href="/files/{{.Path}}">Download</a></p>  
         <audio controls>
           <source src="/files/{{.Path}}" type="{{.MimeType}}" />
           Your browser does not support the audio element.
